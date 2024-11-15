@@ -1,6 +1,7 @@
 package dispatcher
 
 import (
+	"GoEfficientTest/handlers"
 	"GoEfficientTest/models"
 	"GoEfficientTest/services"
 	"bytes"
@@ -12,8 +13,8 @@ import (
 )
 
 func SendRequestsToServers(records []models.RealEstate) {
-	sequentialURL := "http://localhost:8080/process_sequential"
-	concurrentURL := "http://localhost:8081/process_concurrent"
+	sequentialURL := "http://localhost:8081/process_sequential"
+	concurrentURL := "http://localhost:8082/process_concurrent"
 
 	var sequentialTotalTime, concurrentTotalTime time.Duration
 	var sequentialRequestCount, concurrentRequestCount int
@@ -23,7 +24,9 @@ func SendRequestsToServers(records []models.RealEstate) {
 
 	go func() {
 		defer wg.Done()
-		for _, record := range records {
+		totalRecords := len(records)
+
+		for index, record := range records {
 			if !services.ValidateData(record) {
 				continue
 			}
@@ -44,12 +47,19 @@ func SendRequestsToServers(records []models.RealEstate) {
 			sequentialTotalTime += sequentialDuration
 			sequentialRequestCount++
 			sequentialResp.Body.Close()
+
+			// Calculate progress percentage and print
+			progress := float64(index+1) / float64(totalRecords) * 100
+			fmt.Printf("\rSequential Progress: %.2f%%", progress)
 		}
+		fmt.Println() // Print newline after completion
 	}()
 
 	go func() {
 		defer wg.Done()
-		for _, record := range records {
+		totalRecords := len(records)
+
+		for index, record := range records {
 			if !services.ValidateData(record) {
 				continue
 			}
@@ -70,7 +80,12 @@ func SendRequestsToServers(records []models.RealEstate) {
 			concurrentTotalTime += concurrentDuration
 			concurrentRequestCount++
 			concurrentResp.Body.Close()
+
+			// Calculate progress percentage and print
+			progress := float64(index+1) / float64(totalRecords) * 100
+			fmt.Printf("\rConcurrent Progress: %.2f%%", progress)
 		}
+		fmt.Println() // Print newline after completion
 	}()
 
 	wg.Wait()
@@ -85,4 +100,6 @@ func SendRequestsToServers(records []models.RealEstate) {
 
 	fmt.Printf("Total requests to sequential server: %d, Total time: %v, Average time: %v\n", sequentialRequestCount, sequentialTotalTime, sequentialAverageTime)
 	fmt.Printf("Total requests to concurrent server: %d, Total time: %v, Average time: %v\n", concurrentRequestCount, concurrentTotalTime, concurrentAverageTime)
+
+	handlers.PrintMetrics()
 }

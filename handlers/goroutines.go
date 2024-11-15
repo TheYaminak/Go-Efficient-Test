@@ -3,11 +3,8 @@ package handlers
 import (
 	"GoEfficientTest/models"
 	"GoEfficientTest/services"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"sync"
 	"time"
 )
 
@@ -17,40 +14,33 @@ func ConcurrentHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusInternalServerError)
+	record := getRecordFromRequest(r)
+	if record == nil {
+		http.Error(w, "Failed to parse record", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
-
-	var records []models.RealEstate
-	err = json.Unmarshal(body, &records)
-	if err != nil {
-		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
-		return
-	}
-
-	// Send initial response that the data has been validated
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Data validated successfully, processing started."))
 
 	// Start processing data concurrently
-	go func() {
-		var wg sync.WaitGroup
-		startTime := time.Now()
-		for _, record := range records {
-			if !services.ValidateData(record) {
-				continue
-			}
-			wg.Add(1)
-			go func(rec models.RealEstate) {
-				defer wg.Done()
-				services.AdjustValues(&rec)
-			}(record)
-		}
-		wg.Wait()
-		processingDuration := time.Since(startTime)
-		fmt.Printf("Processed %d records concurrently in %v\n", len(records), processingDuration)
-	}()
+	processingStart := time.Now()
+	processingDuration := services.ProcessRecordsConcurrent([]models.RealEstate{*record})
+	services.AdjustValues(record)
+	averageSaleAmount, averageAssessedValue, residentialTypeCount, propertyTypeCount := services.CalculateStatistics([]models.RealEstate{*record})
+	salesRatio := services.CalculateSalesRatios([]models.RealEstate{*record})
+	//townStats := services.AnalyzeTownData([]models.RealEstate{*record})
+	processingTime := time.Since(processingStart)
+
+	// Update global metrics
+	mutex.Lock()
+	concurrentTotalTime += processingTime
+	concurrentRequestCount++
+	concurrentProcessingTime += processingDuration
+	concurrentSaleStats = append(concurrentSaleStats, averageSaleAmount)
+	concurrentSalesRatios = append(concurrentSalesRatios, salesRatio)
+	//concurrentTownData = append(concurrentTownData, townStats)
+	mutex.Unlock()
+
+	// Prepare response
+	response := fmt.Sprintf("Processed record concurrently\nProcessing Time: %v\nAverage Sale Amount: %.2f\nAverage Assessed Value: %.2f\nSales Ratio: %.2f\nResidential Type Count: %v\nProperty Type Count: %v\n", processingTime, averageSaleAmount, averageAssessedValue, salesRatio, residentialTypeCount, propertyTypeCount)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(response))
 }

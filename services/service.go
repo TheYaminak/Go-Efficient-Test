@@ -2,7 +2,11 @@ package services
 
 import (
 	"GoEfficientTest/models"
+	"bytes"
+	"fmt"
+	"io"
 	"math/rand"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -62,45 +66,34 @@ func CalculateSalesRatios(records []models.RealEstate) float64 {
 	return 0.0
 }
 
-func AnalyzeTownData(records []models.RealEstate) map[string]struct {
-	totalSaleAmount    float64
-	totalAssessedValue float64
-	numProperties      int
-} {
+//Not used for now
+// func AnalyzeTownData(records []models.RealEstate) map[string]struct {
+// 	totalSaleAmount    float64
+// 	totalAssessedValue float64
+// 	numProperties      int
+// } {
 
-	townStats := make(map[string]struct {
-		totalSaleAmount    float64
-		totalAssessedValue float64
-		numProperties      int
-	})
+// 	townStats := make(map[string]struct {
+// 		totalSaleAmount    float64
+// 		totalAssessedValue float64
+// 		numProperties      int
+// 	})
 
-	for _, re := range records {
-		stats := townStats[re.Town]
-		stats.totalSaleAmount += re.SaleAmount
-		stats.totalAssessedValue += re.AssessedValue
-		stats.numProperties++
-		townStats[re.Town] = stats
-	}
+// 	for _, re := range records {
+// 		stats := townStats[re.Town]
+// 		stats.totalSaleAmount += re.SaleAmount
+// 		stats.totalAssessedValue += re.AssessedValue
+// 		stats.numProperties++
+// 		townStats[re.Town] = stats
+// 	}
 
-	return townStats
-}
-
-func ProcessRecord(re models.RealEstate) time.Duration {
-	startTime := time.Now()
-
-	if !ValidateData(re) {
-		return time.Since(startTime)
-	}
-
-	AdjustValues(&re)
-
-	return time.Since(startTime)
-}
+// 	return townStats
+// }
 
 func ProcessRecordsSequential(records []models.RealEstate) time.Duration {
 	startTime := time.Now()
 	for _, re := range records {
-		ProcessRecord(re)
+		processRecord(re)
 	}
 	return time.Since(startTime)
 }
@@ -113,10 +106,41 @@ func ProcessRecordsConcurrent(records []models.RealEstate) time.Duration {
 		wg.Add(1)
 		go func(record models.RealEstate) {
 			defer wg.Done()
-			ProcessRecord(record)
+			processRecord(record)
 		}(re)
 	}
 
 	wg.Wait()
+	return time.Since(startTime)
+}
+
+func SendRecordAndWait(record models.RealEstate, serverURL string) (time.Duration, error) {
+	startTime := time.Now()
+
+	data := []byte(fmt.Sprintf("SerialNumber: %d, Address: %s", record.SerialNumber, record.Address))
+	resp, err := http.Post(serverURL, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	_, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+
+	processingDuration := time.Since(startTime)
+	return processingDuration, nil
+}
+
+func processRecord(re models.RealEstate) time.Duration {
+	startTime := time.Now()
+
+	if !ValidateData(re) {
+		return time.Since(startTime)
+	}
+
+	AdjustValues(&re)
+
 	return time.Since(startTime)
 }
