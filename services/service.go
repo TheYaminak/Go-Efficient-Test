@@ -2,11 +2,10 @@ package services
 
 import (
 	"GoEfficientTest/models"
-	"bytes"
+	"encoding/csv"
 	"fmt"
-	"io"
 	"math/rand"
-	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -114,25 +113,6 @@ func ProcessRecordsConcurrent(records []models.RealEstate) time.Duration {
 	return time.Since(startTime)
 }
 
-func SendRecordAndWait(record models.RealEstate, serverURL string) (time.Duration, error) {
-	startTime := time.Now()
-
-	data := []byte(fmt.Sprintf("SerialNumber: %d, Address: %s", record.SerialNumber, record.Address))
-	resp, err := http.Post(serverURL, "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
-	_, err = io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, err
-	}
-
-	processingDuration := time.Since(startTime)
-	return processingDuration, nil
-}
-
 func processRecord(re models.RealEstate) time.Duration {
 	startTime := time.Now()
 
@@ -143,4 +123,28 @@ func processRecord(re models.RealEstate) time.Duration {
 	AdjustValues(&re)
 
 	return time.Since(startTime)
+}
+
+func ExportToCSV(data []float64, filename string) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	if err := writer.Write([]string{"Value"}); err != nil {
+		return fmt.Errorf("failed to write headers: %v", err)
+	}
+
+	for _, value := range data {
+		record := []string{fmt.Sprintf("%.2f", value)}
+		if err := writer.Write(record); err != nil {
+			return fmt.Errorf("failed to write record: %v", err)
+		}
+	}
+
+	return nil
 }

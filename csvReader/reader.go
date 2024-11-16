@@ -9,6 +9,7 @@ import (
 )
 
 func ReadCSV(filename string) ([]models.RealEstate, error) {
+	fmt.Println("Reading CSV file...")
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("could not open file: %w", err)
@@ -55,5 +56,6 @@ func ReadCSV(filename string) ([]models.RealEstate, error) {
 		records = append(records, re)
 	}
 
+	fmt.Println("Finished reading CSV file.")
 	return records, nil
 }

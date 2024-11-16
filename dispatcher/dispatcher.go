@@ -7,12 +7,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
 )
 
 func SendRequestsToServers(records []models.RealEstate) {
+
+	client := &http.Client{}
 	sequentialURL := "http://localhost:8081/process_sequential"
 	concurrentURL := "http://localhost:8082/process_concurrent"
 
@@ -48,11 +51,10 @@ func SendRequestsToServers(records []models.RealEstate) {
 			sequentialRequestCount++
 			sequentialResp.Body.Close()
 
-			// Calculate progress percentage and print
 			progress := float64(index+1) / float64(totalRecords) * 100
 			fmt.Printf("\rSequential Progress: %.2f%%", progress)
 		}
-		fmt.Println() // Print newline after completion
+		fmt.Println()
 	}()
 
 	go func() {
@@ -70,8 +72,15 @@ func SendRequestsToServers(records []models.RealEstate) {
 				continue
 			}
 
+			request, err := http.NewRequest("POST", concurrentURL, bytes.NewBuffer(recordData))
+			if err != nil {
+				fmt.Printf("Error creating request: %v\n", err)
+				continue
+			}
+			request.Header.Set("Content-Type", "application/json")
+
 			concurrentStart := time.Now()
-			concurrentResp, err := http.Post(concurrentURL, "application/json", bytes.NewBuffer(recordData))
+			concurrentResp, err := client.Do(request)
 			if err != nil {
 				fmt.Printf("Error sending request to concurrent server: %v\n", err)
 				continue
@@ -79,27 +88,17 @@ func SendRequestsToServers(records []models.RealEstate) {
 			concurrentDuration := time.Since(concurrentStart)
 			concurrentTotalTime += concurrentDuration
 			concurrentRequestCount++
+
+			// Close the response body properly to free up resources
+			_, _ = io.Copy(io.Discard, concurrentResp.Body) // Asegurarse de leer todo el cuerpo de la respuesta
 			concurrentResp.Body.Close()
 
-			// Calculate progress percentage and print
 			progress := float64(index+1) / float64(totalRecords) * 100
 			fmt.Printf("\rConcurrent Progress: %.2f%%", progress)
 		}
-		fmt.Println() // Print newline after completion
+		fmt.Println()
 	}()
-
 	wg.Wait()
-
-	var sequentialAverageTime, concurrentAverageTime time.Duration
-	if sequentialRequestCount > 0 {
-		sequentialAverageTime = sequentialTotalTime / time.Duration(sequentialRequestCount)
-	}
-	if concurrentRequestCount > 0 {
-		concurrentAverageTime = concurrentTotalTime / time.Duration(concurrentRequestCount)
-	}
-
-	fmt.Printf("Total requests to sequential server: %d, Total time: %v, Average time: %v\n", sequentialRequestCount, sequentialTotalTime, sequentialAverageTime)
-	fmt.Printf("Total requests to concurrent server: %d, Total time: %v, Average time: %v\n", concurrentRequestCount, concurrentTotalTime, concurrentAverageTime)
 
 	handlers.PrintMetrics()
 }
